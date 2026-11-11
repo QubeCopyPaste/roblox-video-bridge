@@ -7,21 +7,29 @@ app = Flask(__name__)
 @app.route('/process', methods=['POST'])
 def process_video():
     data = request.get_json()
-    video_url = data.get('url')
-    
-    if not video_url:
+    if not data or 'url' not in data:
         return jsonify({"error": "No URL provided"}), 400
         
+    video_url = data['url']
+    
     try:
-        ydl_opts = {'format': 'best[ext=mp4]/best'}
+        # Configure yt-dlp to extract the direct playable video URL
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'quiet': True
+        }
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
             stream_url = info.get('url')
+            title = info.get('title', 'Unknown')
             
         return jsonify({
             "status": "success",
+            "title": title,
             "streamUrl": stream_url
         })
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
