@@ -17,9 +17,13 @@ def process_video():
     video_url = data['url']
 
     try:
+        # Add extractor arguments and user agent flags to dodge cloud blocking
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
-            'quiet': True
+            'quiet': True,
+            'no_warnings': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -34,6 +38,7 @@ def process_video():
         })
 
     except Exception as e:
+        print("CRITICAL ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
