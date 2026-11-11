@@ -1,23 +1,32 @@
 from flask import Flask, request, jsonify
 import yt_dlp
 import os
+import traceback
 
 app = Flask(__name__)
+app.url_map.strict_slashes = False  # Prevents trailing slash routing conflicts
 
 @app.route('/', methods=['GET'])
 def home():
     return "Roblox Video Bridge is Live!", 200
 
-@app.route('/process', methods=['POST'])
+@app.route('/process', methods=['GET', 'POST'])
 def process_video():
-    data = request.get_json()
+    # 1. If someone visits /process in a web browser (GET), show a status message instead of crashing
+    if request.method == 'GET':
+        return jsonify({
+            "status": "online",
+            "message": "The /process endpoint is active. Send a POST request with a JSON body containing {'url': 'YOUR_YOUTUBE_URL'}."
+        }), 200
+
+    # 2. Handle the POST request sent from Roblox Studio
+    data = request.get_json(silent=True)
     if not data or 'url' not in data:
-        return jsonify({"error": "No URL provided"}), 400
+        return jsonify({"error": "No URL provided in JSON body"}), 400
 
     video_url = data['url']
 
     try:
-        # Add extractor arguments and user agent flags to dodge cloud blocking
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
             'quiet': True,
@@ -38,7 +47,8 @@ def process_video():
         })
 
     except Exception as e:
-        print("CRITICAL ERROR:", str(e))
+        print("CRITICAL EXCEPTION:")
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
