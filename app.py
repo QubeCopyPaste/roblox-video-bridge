@@ -1,55 +1,84 @@
 from flask import Flask, request, jsonify
-import yt_dlp
+import requests
 import os
-import traceback
+import re
 
 app = Flask(__name__)
-app.url_map.strict_slashes = False  # Prevents trailing slash routing conflicts
+app.url_map.strict_slashes = False
+
+# Public Piped API instances that handle the YouTube bypassing for you
+PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.drgns.space",
+    "https://api.piped.private.coffee"
+]
+
+def extract_video_id(url):
+    patterns = [
+        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+        r'(?:embed\/)([0-9A-Za-z_-]{11})',
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Roblox Video Bridge is Live!", 200
+    return "Roblox Piped Bridge is Live!", 200
 
 @app.route('/process', methods=['GET', 'POST'])
 def process_video():
-    # 1. If someone visits /process in a web browser (GET), show a status message instead of crashing
     if request.method == 'GET':
-        return jsonify({
-            "status": "online",
-            "message": "The /process endpoint is active. Send a POST request with a JSON body containing {'url': 'YOUR_YOUTUBE_URL'}."
-        }), 200
+        return jsonify({"status": "online", "message": "Send a POST request with {'url': 'YOUTUBE_URL'}"}), 200
 
-    # 2. Handle the POST request sent from Roblox Studio
     data = request.get_json(silent=True)
     if not data or 'url' not in data:
-        return jsonify({"error": "No URL provided in JSON body"}), 400
+        return jsonify({"error": "No URL provided"}), 400
 
     video_url = data['url']
+    video_id = extract_video_id(video_url)
+    
+    if not video_id:
+        return jsonify({"error": "Invalid YouTube URL format"}), 400
 
-    try:
-        ydl_opts = {
-            'format': 'best[ext=mp4]/best',
-            'quiet': True,
-            'no_warnings': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+    stream_url = None
+    title = "Unknown"
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            stream_url = info.get('url')
-            title = info.get('title', 'Unknown')
+    # Rotate through public Piped instances to find one that responds instantly
+    for instance in PIPED_INSTANCES:
+        try:
+            api_url = f"{instance}/streams/{video_id}"
+            response = requests.get(api_url, timeout=5)
+            
+            if response.status_code == 200:
+                vid_data = response.json()
+                title = vid_data.get('title', 'Unknown')
+                
+                # Piped returns an array of video streams; grab the best playable audio/video or video-only stream URL
+                streams = vid_data.get('videoStreams', [])
+                if streams:
+                    # Look for a stream that has a direct URL
+                    for s in streams:
+                        if 'url' in s:
+                            stream_url = s['url']
+                            break
+                
+                if stream_url:
+                    break
+        except Exception:
+            continue
 
-        return jsonify({
-            "status": "success",
-            "title": title,
-            "streamUrl": stream_url
-        })
+    if not stream_url:
+        return jsonify({"error": "Failed to fetch stream from alternative backend"}), 500
 
-    except Exception as e:
-        print("CRITICAL EXCEPTION:")
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "status": "success",
+        "title": title,
+        "streamUrl": stream_url
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
